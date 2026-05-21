@@ -247,6 +247,96 @@ Use these exact phrases:
 
 ---
 
+## Analytics layer (formalized measurement framework)
+
+**Analytics is not optional. It is the feedback system that converts GTM work into product learning.**
+
+### Architecture: Event → Implementation → Measurement → Analysis
+
+| Layer | Owner | Responsibility | Output |
+|---|---|---|---|
+| **Event Schema** | phlow-tsd | Define event structure, properties, validation rules | `events/schema.json` (versioned) |
+| **Implementation** | womancycle | Fire events, maintain analytics SDK | `lib/analytics.ts` + test coverage |
+| **Campaign Measurement** | phlow-gtm (YOU) | Define KRs for experiments, map events to GTM decisions | `tracking/campaign-metrics.md` + weekly reports |
+| **Data Analysis** | DM Tracker | Aggregate events, visualize cohorts, interpret results | Weekly/monthly analytics dashboards |
+
+### How events flow from experiment to insight
+
+**Example: E1 (DM outreach) needs "day_7_return" measurement**
+
+1. **phlow-tsd defines the event:**
+   ```json
+   {
+     "name": "day_7_return",
+     "properties": {
+       "uid": "u_[timestamp]_[random]",
+       "cohort": "E1-dm-outreach",
+       "phase": "menstrual|follicular|ovulatory|mid-luteal|late-luteal",
+       "source": "dm-outreach|social|blog|referral"
+     }
+   }
+   ```
+
+2. **womancycle implements the event:**
+   - `app/page.tsx` fires `trackEvent('day_7_return', { uid, cohort })` when user returns on Day 7
+   - `lib/analytics.ts` validates event schema before sending to Vercel
+   - `test/analytics.test.ts` verifies event fires correctly
+
+3. **phlow-gtm defines the KR for E1:**
+   - Target: "50%+ of E1-dm-outreach installers return on Day 7"
+   - Success metric: `day_7_return` event count / `pwa_installed` count for cohort E1
+   - Failure threshold: <30% (debug with phlow-md)
+
+4. **DM Tracker aggregates and visualizes:**
+   - Weekly chart: Day-7 return rate by campaign cohort (E1–E6)
+   - Daily log: Raw events from phlow_cohort_d7 key
+   - Monthly report: Cohort analysis + retention trends
+
+### Rules for analytics coordination
+
+**When defining a new campaign measurement:**
+1. Check `phlow-tsd/events/schema.json` for existing event (do not reinvent)
+2. If event doesn't exist, open GitHub issue in phlow-tsd tagged `@copilot-tsd` with:
+   - Event name and purpose
+   - Required properties (must include uid, source, cohort)
+   - Example: "For E4 Mafia offer, need `mafia_offer_acceptance` event to track stage progression"
+3. Wait for phlow-tsd confirmation that event is in schema before implementing in womancycle
+4. Once confirmed, open issue in womancycle tagged `@copilot-tsd` for implementation
+
+**When reporting campaign results:**
+1. Extract raw data from DM Tracker (dates, cohort, event counts, return rates)
+2. Calculate KR achievement: `(actual / target) × 100`
+3. Document in `tracking/experiment-results.md`: Date, campaign, impressions, installs, Day-7 return, learnings
+4. If KR missed, open phlow-md GitHub issue with data + question: "E2 generated 15 installs but Day-7 return was 20%. Was the assumption wrong or the messaging?"
+
+### Current event inventory (from womancycle)
+
+| Event | Fired by | Properties | GTM Use |
+|---|---|---|---|
+| `phase_card_viewed` | DailyCard component | uid, phase, cycle_day | Engagement baseline |
+| `day_7_return` | app/page.tsx | uid, cohort | Experiment success metric |
+| `day_14_return` | app/page.tsx | uid, cohort | Retention signal |
+| `day_28_return` | app/page.tsx | uid, cohort | LTV signal |
+| `returning_user` | app/page.tsx | uid, phlow_last_return_date | Churn detection |
+| `pwa_installed` | service worker | uid, source, timestamp | Acquisition metric |
+
+### DM Tracker integration points
+
+- **Raw data source:** localStorage keys (phlow_cohort_d7, phlow_cohort_d14, phlow_cohort_d28)
+- **Daily sync:** DM Tracker pulls event data via API or export
+- **Campaign attribution:** `phlow_referral_source` key tracks which campaign generated install
+- **Cohort tagging:** Each campaign assigns cohort ID (E1, E2, E3, etc.) on install
+- **Analysis output:** Weekly CSV export for GTM to import into tracking/campaign-metrics.md
+
+### Analytics does NOT replace human judgment
+
+- **Numbers tell you WHAT happened.** ("Day-7 return was 15%.")
+- **Your job is to ask WHY.** ("Was the audience wrong? The message? The product?")
+- **Coordinate with phlow-md for WHY answers.** (Open issue: "E2 underperformed. Should we kill this channel or iterate messaging?")
+- **Do not over-optimize early.** Week 1 numbers are noise. Experiments run minimum 2 weeks before declaring won/lost.
+
+---
+
 ## Copilot constraints for GTM execution
 
 **Things you must NOT do:**
